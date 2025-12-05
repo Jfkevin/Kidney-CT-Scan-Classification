@@ -17,23 +17,42 @@ st.write("Unggah gambar CT Scan Ginjal untuk mendeteksi: **Normal, Cyst, Tumor, 
 CLASS_NAMES = ['Normal', 'Cyst', 'Tumor', 'Stone']
 
 # --- 3. Fungsi Load Model ---
-@st.cache_resource # Cache agar model tidak diload ulang setiap kali ada interaksi
+# --- 3. Fungsi Load Model (Versi Debug) ---
+@st.cache_resource
 def load_model():
     # Load arsitektur ResNet18
     model = models.resnet18(pretrained=False)
     
-    # Sesuaikan layer terakhir (Fully Connected) untuk 4 kelas
+    # Sesuaikan layer terakhir sesuai jumlah kelas di CLASS_NAMES
     num_ftrs = model.fc.in_features
     model.fc = nn.Linear(num_ftrs, len(CLASS_NAMES))
     
-    # Load bobot yang sudah dilatih (pastikan file ada di folder yang sama)
+    # Path ke file model
+    map_loc = torch.device('cpu')
+    
     try:
-        model.load_state_dict(torch.load('model_kidney.pth', map_location=torch.device('cpu')))
-    except FileNotFoundError:
-        st.error("File 'model_kidney.pth' tidak ditemukan. Pastikan sudah diupload.")
+        # Coba load model secara normal
+        state_dict = torch.load('model_kidney.pth', map_location=map_loc)
+        
+        # PERBAIKAN OTOMATIS 1: Hapus prefix 'module.' jika ada (sisa training multi-GPU)
+        new_state_dict = {}
+        for k, v in state_dict.items():
+            name = k.replace("module.", "") 
+            new_state_dict[name] = v
+        state_dict = new_state_dict
+        
+        # Load ke model (strict=False agar tidak error jika ada sedikit beda, tapi kita warning)
+        model.load_state_dict(state_dict, strict=True)
+        
+    except RuntimeError as e:
+        st.error(f"❌ Gagal memuat model! Error Detail:\n {e}")
+        st.warning("Tips: Jika errornya 'Size mismatch for fc.weight', berarti jumlah kelas di file model beda dengan di kode.")
+        return None
+    except Exception as e:
+        st.error(f"❌ Terjadi kesalahan lain: {e}")
         return None
     
-    model.eval() # Set ke mode evaluasi
+    model.eval()
     return model
 
 model = load_model()
